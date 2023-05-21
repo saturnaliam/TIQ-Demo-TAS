@@ -13,44 +13,59 @@
 #include <TlHelp32.h>
 #include <string>
 
-const std::vector<DWORD> FL32SA_OFFSET = { 0xC95B64, 0x24, 0xA8C, 0x4, 0x2C, 0x50, 0x264, 0x4C };
+const std::vector<DWORD_PTR> FL32SA_OFFSET = { 0xC95B64, 0x24, 0xA8C, 0x4, 0x2C, 0x50, 0x264, 0x4C };
 
-DWORD getModuleBase(const wchar_t* moduleName, DWORD processId) {
-    // This structure contains lots of goodies about a module
-    MODULEENTRY32 ModuleEntry = { 0 };
-    // Grab a snapshot of all the modules in the specified process
-    HANDLE SnapShot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, processId);
-
-    if (!SnapShot)
-        return 0;
-
-    // You have to initialize the size, otherwise it will not work
-    ModuleEntry.dwSize = sizeof(ModuleEntry);
-
-    // Get the first module in the process
-    if (!Module32First(SnapShot, &ModuleEntry))
-        return 0;
-
-    do {
-        // Check if the module name matches the one we're looking for
-        if (!wcscmp(ModuleEntry.szModule, moduleName)) {
-            // If it does, close the snapshot handle and return the base address
-            CloseHandle(SnapShot);
-            return (DWORD)ModuleEntry.modBaseAddr;
-        }
-        // Grab the next module in the snapshot
-    } while (Module32Next(SnapShot, &ModuleEntry));
-
-    // We couldn't find the specified module, so return NULL
-    CloseHandle(SnapShot);
-    return 0;
+DWORD getDwordFromBytes(BYTE* b)
+{
+    return (b[0]) | (b[1] << 8) | (b[2] << 16) | (b[3] << 24);
 }
 
-void goThroughPointerPath(DWORD &address, int &givenValue, const std::vector<DWORD> offsets, const DWORD &baseAddress, const HANDLE &processHandle) {
+uintptr_t getModuleBase(DWORD processId, const WCHAR* windowTitle)
+{
+    HWND windowHandle = FindWindow(NULL, windowTitle);
+    if (!windowHandle)
+    {
+        return 0;
+    }
+
+    DWORD processIdFound = 0;
+    GetWindowThreadProcessId(windowHandle, &processIdFound);
+    if (processIdFound != processId)
+    {
+        return 0;
+    }
+
+    HANDLE processHandle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, processId);
+    if (!processHandle)
+    {
+        return 0;
+    }
+
+    MODULEENTRY32 moduleEntry = { sizeof(moduleEntry) };
+    uintptr_t moduleBaseAddress = 0;
+    HANDLE snapshotHandle = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, processId);
+    if (Module32First(snapshotHandle, &moduleEntry))
+    {
+        do
+        {
+            if (_wcsicmp(moduleEntry.szModule, L"flashplayer_32_sa.exe") == 0)
+            {
+                moduleBaseAddress = reinterpret_cast<uintptr_t>(moduleEntry.modBaseAddr);
+            }
+        } while (Module32Next(snapshotHandle, &moduleEntry));
+    }
+
+    CloseHandle(snapshotHandle);
+    CloseHandle(processHandle);
+
+    return moduleBaseAddress;
+}
+
+void goThroughPointerPath(DWORD_PTR &address, int &givenValue, const std::vector<DWORD_PTR> offsets, const DWORD_PTR &baseAddress, const HANDLE &processHandle) {
     SIZE_T bytesRead;
     givenValue = baseAddress;
 
-    for (DWORD offset : offsets) {
+    for (DWORD_PTR offset : offsets) {
         address = givenValue;
         address += offset;
         ReadProcessMemory(processHandle, (LPVOID)address, &givenValue, sizeof(givenValue), &bytesRead);

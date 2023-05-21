@@ -9,4 +9,4 @@ ${PROJECT_SOURCE_DIR}/include/*.hpp
 ${PROJECT_SOURCE_DIR}/main.cpp)
 
 add_executable(TDT ${SOURCES})
-target_compile_options(TDT PRIVATE -Ofast)
+target_compile_options(TDT PRIVATE -std=c++17 -static -static-libstdc++)
